@@ -38,22 +38,23 @@ R2_BODY="$(mktemp)"
 trap 'rm -f "$BODY" "$REQUEST" "$R2_BODY"' EXIT
 # Calls the API with the key passed on stdin (never visible in ps). Extra curl args follow the path.
 # The body goes to a file that curl truncates on every retry, so only the last attempt's body is kept.
-# Returns non-zero (with the reason in $BODY or on stderr) on a curl failure or an HTTP status >= 400.
+# Returns 0 on success; 1 on a curl failure (no HTTP response); 2 on a client error (4xx other than 408/429);
+# 3 on a transient status (5xx, 408, 429). The reason is in $BODY or on stderr.
 api_raw() {
 	local method="$1" path="$2" code
 	shift 2
 	: >"$BODY"
 	code="$(printf 'header = "x-api-key: %s"\n' "$SIGNER_API_KEY" | curl -sS -o "$BODY" -w '%{http_code}' --max-time 60 \
 		--retry 3 --retry-delay 2 --retry-connrefused -K - -X "$method" -H 'content-type: application/json' "$@" "$SIGNER_URL/api$path")" || return 1
-	[ "$code" -lt 400 ]
+	case "$code" in
+	[23]??) return 0 ;;
+	408 | 429 | 5??) return 3 ;;
+	*) return 2 ;;
+	esac
 }
+api_die() { die "$1 $2 failed: $(json "$(cat "$BODY")" message || cat "$BODY")"; }
 api() {
-	if ! api_raw "$@"; then die "$1 $2 failed: $(json "$(cat "$BODY")" message || cat "$BODY")"; fi
-	cat "$BODY"
-}
-# Like api, but quiet and never fatal: the poll loop uses it to ride out service restarts.
-api_soft() {
-	api_raw "$@" 2>/dev/null || return 1
+	if ! api_raw "$@"; then api_die "$@"; fi
 	cat "$BODY"
 }
 
@@ -85,10 +86,19 @@ last=""
 outage=""
 deadline=$(($(date +%s) + 1800))
 while :; do
+	rc=0
+	api_raw GET "/builds/$BUILD_ID" 2>/dev/null || rc=$?
+	# Only transient failures (no response, 5xx, 408, 429) are retried; a client error dies at once.
+	[ "$rc" -ne 2 ] || api_die GET "/builds/$BUILD_ID"
 	status=""
-	build="$(api_soft GET "/builds/$BUILD_ID")" && status="$(json "$build" status)" || status=""
+	note="service unreachable"
+	if [ "$rc" -eq 0 ]; then
+		build="$(cat "$BODY")"
+		status="$(json "$build" status)" || status=""
+		note="unexpected response"
+	fi
 	if [ -z "$status" ]; then
-		if [ -z "$outage" ]; then log "  (service unreachable, retrying)"; outage=1; fi
+		if [ "$outage" != "$note" ]; then log "  ($note, retrying)"; outage="$note"; fi
 	else
 		outage=""
 		if [ "$status" != "$last" ]; then log "  $status"; last="$status"; fi
