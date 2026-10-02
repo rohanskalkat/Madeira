@@ -53,9 +53,25 @@ api_raw() {
 	esac
 }
 api_die() { die "$1 $2 failed: $(json "$(cat "$BODY")" message || cat "$BODY")"; }
-api() {
-	if ! api_raw "$@"; then api_die "$@"; fi
-	cat "$BODY"
+# Calls the API and prints the body. Rides out a deploy: transient failures (no response, 5xx, 408, 429)
+# are retried for about 2 minutes. A client error (e.g. 409) still dies at once.
+api_retry() {
+	local rc deadline warned=""
+	deadline=$(($(date +%s) + 120))
+	while :; do
+		rc=0
+		api_raw "$@" 2>/dev/null || rc=$?
+		case "$rc" in
+		0) cat "$BODY"; return 0 ;;
+		2) api_die "$@" ;;
+		esac
+		if [ "$(date +%s)" -ge "$deadline" ]; then
+			[ -s "$BODY" ] || die "$1 $2 failed: service unreachable"
+			api_die "$@"
+		fi
+		if [ -z "$warned" ]; then log "  (service unavailable, retrying)"; warned=1; fi
+		sleep 5
+	done
 }
 
 [ -n "$IPA" ] || IPA="$("$ROOT/tools/build-unsigned-ipa.sh")"
@@ -69,7 +85,7 @@ plutil -insert sha256 -string "$(shasum -a 256 "$IPA" | cut -d' ' -f1)" "$REQUES
 plutil -convert json "$REQUEST"
 
 log "Registering $(basename "$IPA")…"
-created="$(api POST /builds --data-binary "@$REQUEST")"
+created="$(api_retry POST /builds --data-binary "@$REQUEST")"
 BUILD_ID="$(json "$created" buildId)"
 UPLOAD_URL="$(json "$created" uploadUrl)"
 APP_URL="$(json "$created" appUrl)"
@@ -79,7 +95,7 @@ log "Uploading $(du -h "$IPA" | cut -f1 | tr -d ' ')…"
 if ! curl --fail-with-body --progress-bar -H 'Expect:' -T "$IPA" "$UPLOAD_URL" -o "$R2_BODY"; then
 	die "upload to R2 failed: $(cat "$R2_BODY")"
 fi
-api POST "/builds/$BUILD_ID/complete" --data '{}' >/dev/null
+api_retry POST "/builds/$BUILD_ID/complete" --data '{}' >/dev/null
 
 log "Waiting for signing…"
 last=""
