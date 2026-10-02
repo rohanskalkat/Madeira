@@ -62,6 +62,65 @@ git-ignored and consumed by the app project.
    -> `app/Madeira/aarch64-windows/xtajit.dll`) and the aarch64 `wow64.dll` /
    `wow64win.dll`; see docs/WOW64.md, "Building". UNVERIFIED on macOS.
 
+## Building from a clean checkout (verified 2026-10-02)
+
+The chain above was re-run from a fresh clone of this repository on macOS 27,
+Xcode 27.0, Apple Silicon, ending in a successful unsigned Debug IPA via
+`tools/build-unsigned-ipa.sh`. These are the exact steps and the fixes the
+scripts needed; the fixes are in the scripts now.
+
+1. Tools: `brew install cmake ninja meson pkg-config autoconf automake bison
+   flex ccache sevenzip llvm` (Homebrew's `llvm` provides the `llvm-objcopy`
+   that `build/wineserver/build.sh` uses; macOS's own `bison` 2.3 is too old
+   for Wine, so put `/opt/homebrew/opt/bison/bin` and
+   `/opt/homebrew/opt/flex/bin` first on `PATH` for the Wine configure).
+   Metal Toolchain: `xcodebuild -downloadComponent MetalToolchain`.
+2. `git submodule update --init --recursive --depth 1` (all four pinned
+   commits are on the forks now).
+3. llvm-mingw: download the pinned tarball (SHA-256 above), verify, extract
+   into `toolchains/`.
+4. LLVM 15.0.7 (`8dfdcc7b7`) for iOS, per build/dxmt-ios/README.md step 3:
+   `git clone --depth 1 --branch llvmorg-15.0.7 https://github.com/llvm/llvm-project.git toolchains/llvm-project`;
+   change line 266 of `llvm/cmake/modules/AddLLVM.cmake` from
+   `MATCHES "Darwin")` to `MATCHES "Darwin|iOS")`; build `llvm-tblgen` in
+   `toolchains/llvm-host-build` (Release, no targets); configure
+   `toolchains/llvm-ios-build` with the flags in the table above plus
+   `-DLLVM_TABLEGEN=<host llvm-tblgen> -DLLVM_BUILD_UTILS=Off
+   -DLLVM_INCLUDE_TOOLS=Off -DLLVM_ENABLE_PLUGINS=Off` (the `LLVMHello`
+   sample plugin cannot link for iOS) and build it (73 static libraries).
+5. `build/gnutls-ios/build.sh`, `build/ffmpeg/build.sh`.
+6. FreeType for win32u and dwrite:
+   `git clone --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype.git research/freetype`,
+   then `bash build/freetype-ios/build.sh`.
+7. `build/fex-ios/build.sh`. Fixed: it now sets `CMAKE_SYSTEM_PROCESSOR`
+   (empty in an iOS cross build, rejected by FEX), `TUNE_CPU=none` (the
+   default probes the build machine's `/proc/cpuinfo`), builds the
+   `JemallocLibs` target the app links, and force-includes
+   `build/fex-ios/ios_host_shims.h` for three diagnostics in the FEX fork that
+   only compile for its Windows modules.
+8. Wine unix side. Configure the macOS build tree the scripts include from:
+   `mkdir -p wine/build-macos && cd wine/build-macos && ../configure
+   --enable-win64 --enable-archs=aarch64 --with-mingw=llvm-mingw --without-x
+   --without-freetype --without-vulkan --disable-tests --enable-winegstreamer
+   --prefix=/tmp/wine-ios` (llvm-mingw's `bin` on `PATH`), then
+   `make include/all` for the IDL headers. Then `build/ntdll-unix/build.sh`,
+   `build/win32u-unix/build.sh`, `build/wineserver/build.sh`. Fixed: the
+   wineserver script used to require an existing `libwineserver.a`; on a
+   fresh checkout it now builds the base archive from `wine/server`.
+9. DXMT unix side: `build/dxmt-ios/build.sh`, then the combine step from
+   build/dxmt-ios/README.md (`libtool -static … obj/*.o
+   toolchains/llvm-ios-build/lib/*.a`, copied to `app/Madeira/`). Fixed: the
+   script now generates airconv's three embedded shader headers (Xcode 27's
+   Metal compiler needs the public `atomic_fetch_add_explicit` in
+   `air_tessellation.metal`, applied to a build copy), and resolves the
+   `winemetal` includes that still assume the submodule's old
+   `research/dxmt` location through a mirror under `obj/`.
+10. `tools/fetch-vcruntime.sh` for `app/Madeira/x86_64-vcruntime/`.
+11. `tools/build-unsigned-ipa.sh` (or `tools/ship-ipa.sh`).
+
+The PE-side DLL farm in `app/Madeira/arm64ec-windows/` is tracked, so steps
+for rebuilding it are only needed when changing those modules.
+
 ## Status of the LGPL relink question
 
 A recipient of a built package can obtain the complete corresponding
