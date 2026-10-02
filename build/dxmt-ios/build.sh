@@ -18,6 +18,7 @@ OUT_LIB="$BUILD_DIR/libdxmt_unix.a"
 mkdir -p "$OBJ_DIR"
 
 COMMON_FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=18.0 -fblocks -O2"
+INCLUDES="-I$DXMT_ROOT/include -I$DXMT_ROOT/libs -I$DXMT_SRC/winemetal -I$DXMT_SRC/airconv"
 # winemetal's unix sources include files by paths written for the submodule's
 # old location, research/dxmt ("../../../../remote-metal/protocol.h",
 # "../../../../../build/madeira_cfg.h"). Mirror that layout under obj/: the old
@@ -29,7 +30,7 @@ OLD_UNIX_DIR="$OLD_LAYOUT/research/dxmt/src/winemetal/unix"
 mkdir -p "$OLD_UNIX_DIR"
 ln -sfn "$REPO_ROOT/research/remote-metal" "$OLD_LAYOUT/research/remote-metal"
 ln -sfn "$REPO_ROOT/build" "$OLD_LAYOUT/build"
-INCLUDES="-I$DXMT_ROOT/include -I$DXMT_ROOT/libs -I$DXMT_SRC/winemetal -I$DXMT_SRC/airconv -iquote $OLD_UNIX_DIR"
+INCLUDES="$INCLUDES -iquote $OLD_UNIX_DIR"
 INCLUDES_DIRECTX="-I$DXMT_ROOT/include/native/directx -I$DXMT_ROOT/include/native/windows"
 INCLUDES_SHADERS="-I$BUILD_DIR/shader-headers"
 LLVM_INCLUDES="-I$LLVM_BUILD/include -I$LLVM_SRC/include"

@@ -12,8 +12,7 @@ SHIMS_DIR="$REPO_ROOT/build/ntdll-unix/shims"
 OBJ_DIR="$BUILD_DIR/obj"
 mkdir -p "$OBJ_DIR"
 
-# Base library: reuse an existing one, or build it from the server sources
-# (a fresh checkout has none; see "Base archive" below).
+# Copy the base library if we don't have one yet
 BUILD_BASE=0
 if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
     if [ -f "$APP_LIB" ]; then

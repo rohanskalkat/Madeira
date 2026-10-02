@@ -16,19 +16,20 @@ msvcp140_atomic_wait.dll
 
 ## How to get them
 
-Run the fetch script. It downloads the official x64 redistributable from
-Microsoft (`VC_redist.x64.exe`) and extracts the twelve DLLs into
-`app/Madeira/x86_64-vcruntime/`:
+Download the official x64 redistributable from Microsoft
+(`VC_redist.x64.exe`) and extract it. On macOS, 7-Zip can do this:
 
 ```sh
 brew install sevenzip
-tools/fetch-vcruntime.sh
+7zz x VC_redist.x64.exe -o/tmp/vcredist
+7zz x /tmp/vcredist/.rsrc/1033/CABINET/*.cab -oapp/Madeira/x86_64-vcruntime
 ```
 
-Current installers are WiX bundles: the DLLs sit in a cabinet inside a
-container appended to the executable, stored under keys like
-`vcruntime140.dll_amd64`. The script carves out the embedded cabinets,
-unpacks them, and copies each `<name>.dll_amd64` to `<name>.dll` without
+Current installers are WiX bundles that the commands above do not unpack:
+the DLLs sit in a cabinet inside a container appended to the executable,
+stored under keys like `vcruntime140.dll_amd64`. For those, run
+`tools/fetch-vcruntime.sh`; it downloads the installer, carves out the
+embedded cabinets, and copies each `<name>.dll_amd64` to `<name>.dll` without
 changing a byte.
 
 Exact layout varies by redistributable version; the goal is simply the twelve
