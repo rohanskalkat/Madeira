@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build Madeira, upload it to the signing service and wait until it is signed.
 #
-# Usage: tools/ship-ipa.sh [--ipa PATH]
+# Usage: tools/ship-ipa.sh [--ipa PATH | --clean]
+# --clean deletes the IPAs in build/ipa/ (and their .json files) and exits without building.
 # Needs ~/.config/madeira-signer/env (mode 600) with SIGNER_URL and SIGNER_API_KEY
 # (see docs/BUILDING.md). Prints the app's install page when done.
 set -euo pipefail
@@ -10,6 +11,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG_DIR="${MADEIRA_SIGNER_CONFIG:-$HOME/.config/madeira-signer}"
 ENV_FILE="$CONFIG_DIR/env"
 IPA=""
+CLEAN=""
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
@@ -18,10 +20,22 @@ json() { printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null; }
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--ipa) IPA="${2:?--ipa needs a path}"; shift 2 ;;
+	--clean) CLEAN=1; shift ;;
 	-h | --help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 0 ;;
 	*) die "unknown option: $1" ;;
 	esac
 done
+
+if [ -n "$CLEAN" ]; then
+	[ -z "$IPA" ] || die "--clean and --ipa cannot be combined"
+	shopt -s nullglob
+	files=("$ROOT"/build/ipa/*.ipa "$ROOT"/build/ipa/*.json)
+	[ ${#files[@]} -gt 0 ] || { log "No IPAs in build/ipa/."; exit 0; }
+	ipas=("$ROOT"/build/ipa/*.ipa)
+	rm -f "${files[@]}"
+	log "Deleted ${#ipas[@]} IPA(s) from build/ipa/."
+	exit 0
+fi
 
 [ -f "$ENV_FILE" ] || die "missing $ENV_FILE (SIGNER_URL, SIGNER_API_KEY); see docs/BUILDING.md"
 [ "$(stat -f %Lp "$ENV_FILE")" = 600 ] || die "$ENV_FILE holds an API key; run: chmod 600 $ENV_FILE"

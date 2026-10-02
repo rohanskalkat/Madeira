@@ -155,4 +155,5 @@ instance, waits until it is signed, and prints the page to install it from.
    written into the built app only; the project and `Info.plist` stay unchanged.
    Re-running with `--ipa build/ipa/<file>.ipa` re-uploads a build whose upload or
    signing failed. `tools/build-unsigned-ipa.sh` on its own just builds the IPA
-   into `build/ipa/`.
+   into `build/ipa/`. Built IPAs are kept there; `tools/ship-ipa.sh --clean`
+   deletes them without building.
