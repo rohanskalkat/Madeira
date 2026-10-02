@@ -34,6 +34,11 @@ if [ -n "$BUILD_NUMBER" ] && ! is_int "$BUILD_NUMBER"; then die "--build-number 
 # The Xcode build fails if the bundled licence copies are missing or stale.
 "$ROOT/build/stage-licenses.sh" >&2
 
+# The project bundles the Microsoft VC++ runtime from this git-ignored folder.
+if ! ls "$ROOT/app/Madeira/x86_64-vcruntime/"*.dll >/dev/null 2>&1; then
+	die "app/Madeira/x86_64-vcruntime/ has no DLLs; run tools/fetch-vcruntime.sh (see tools/fetch-vcruntime.md)"
+fi
+
 log "Building Madeira (Debug, unsigned)…"
 xcodebuild -quiet \
 	-project "$ROOT/app/Madeira.xcodeproj" -scheme Madeira -configuration Debug \

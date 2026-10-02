@@ -16,14 +16,20 @@ msvcp140_atomic_wait.dll
 
 ## How to get them
 
-Download the official x64 redistributable from Microsoft
-(`VC_redist.x64.exe`) and extract it. On macOS, 7-Zip can do this:
+Run the fetch script. It downloads the official x64 redistributable from
+Microsoft (`VC_redist.x64.exe`) and extracts the twelve DLLs into
+`app/Madeira/x86_64-vcruntime/`:
 
 ```sh
 brew install sevenzip
-7zz x VC_redist.x64.exe -o/tmp/vcredist
-7zz x /tmp/vcredist/.rsrc/1033/CABINET/*.cab -oapp/Madeira/x86_64-vcruntime
+tools/fetch-vcruntime.sh
 ```
+
+Current installers are WiX bundles: the DLLs sit in a cabinet inside a
+container appended to the executable, stored under keys like
+`vcruntime140.dll_amd64`. The script carves out the embedded cabinets,
+unpacks them, and copies each `<name>.dll_amd64` to `<name>.dll` without
+changing a byte.
 
 Exact layout varies by redistributable version; the goal is simply the twelve
 files above, **byte-for-byte as Microsoft shipped them**.
