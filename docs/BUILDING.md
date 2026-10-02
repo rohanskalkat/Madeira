@@ -73,3 +73,27 @@ rebuild, signing and installation has NOT been performed. Until it is,
 docs/LICENSING.md keeps the relink capability marked unverified. The
 alternative the LGPL offers, shipping the application's object files, is
 not currently done.
+
+## Testing on your iPhone through a signing service
+
+`tools/ship-ipa.sh` builds an unsigned Debug IPA, uploads it to an ipa-signer
+instance, waits until it is signed, and prints the page to install it from.
+
+1. In the signing service, create an API key under **Settings → API keys**.
+   Keys can only upload builds.
+2. Save the service URL and key outside the repository:
+
+   ```sh
+   mkdir -p ~/.config/madeira-signer
+   cat > ~/.config/madeira-signer/env <<'ENV'
+   SIGNER_URL=https://apps.example.com
+   SIGNER_API_KEY=...
+   ENV
+   chmod 600 ~/.config/madeira-signer/env
+   ```
+
+3. Run `tools/ship-ipa.sh`. Each build gets a higher build number than the last,
+   written into the built app only; the project and `Info.plist` stay unchanged.
+   Re-running with `--ipa build/ipa/<file>.ipa` re-uploads a build whose upload or
+   signing failed. `tools/build-unsigned-ipa.sh` on its own just builds the IPA
+   into `build/ipa/`.
