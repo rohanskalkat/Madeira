@@ -13,12 +13,12 @@ OBJ_DIR="$BUILD_DIR/obj"
 mkdir -p "$OBJ_DIR"
 
 # Copy the base library if we don't have one yet
+BUILD_BASE=0
 if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
     if [ -f "$APP_LIB" ]; then
         cp "$APP_LIB" "$OBJ_DIR/libwineserver.a"
     else
-        echo "ERROR: No base libwineserver.a found"
-        exit 1
+        BUILD_BASE=1
     fi
 fi
 
@@ -107,6 +107,28 @@ PATCHED_FILES=(
     # copy adds the [srv-conn]/[tcp-state]/[tcp-enum] probes.
     "sock:$WINE_SRC/server/sock.c:sock.o"
 )
+
+# Base archive: on a fresh checkout there is no previous libwineserver.a to
+# patch, so compile every server source listed in wine/server/Makefile.in with
+# the flags above. The patched files below then replace their objects exactly
+# as they do in an existing archive.
+if [ "$BUILD_BASE" = 1 ]; then
+    echo "=== Building base libwineserver.a from wine/server ==="
+    BASE_DIR="$OBJ_DIR/base"
+    rm -rf "$BASE_DIR" && mkdir -p "$BASE_DIR"
+    SERVER_SOURCES=$(awk '/^SOURCES =/{f=1} f{print} f&&!/\\$/{exit}' "$WINE_SRC/server/Makefile.in" \
+        | tr ' \\\t' '\n\n\n' | grep '\.c$')
+    for src in $SERVER_SOURCES; do
+        name="${src%.c}"
+        echo -n "  base/$name... "
+        if xcrun -sdk iphoneos clang "${CC_FLAGS[@]}" -c "$WINE_SRC/server/$src" -o "$BASE_DIR/$name.o" 2>"$BASE_DIR/err-$name.txt"; then
+            echo "OK"
+        else
+            echo "FAILED (see $BASE_DIR/err-$name.txt)"; cat "$BASE_DIR/err-$name.txt"; exit 1
+        fi
+    done
+    ar rcs "$OBJ_DIR/libwineserver.a" "$BASE_DIR"/*.o
+fi
 
 echo "=== Building kill wrapper (without kill macro) ==="
 echo -n "  wineserver_ios_kill... "

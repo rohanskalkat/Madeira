@@ -19,6 +19,18 @@ mkdir -p "$OBJ_DIR"
 
 COMMON_FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=18.0 -fblocks -O2"
 INCLUDES="-I$DXMT_ROOT/include -I$DXMT_ROOT/libs -I$DXMT_SRC/winemetal -I$DXMT_SRC/airconv"
+# winemetal's unix sources include files by paths written for the submodule's
+# old location, research/dxmt ("../../../../remote-metal/protocol.h",
+# "../../../../../build/madeira_cfg.h"). Mirror that layout under obj/: the old
+# source directory plus symlinks to research/remote-metal and build/. Searching
+# it as a quoted-include directory resolves those paths without editing the
+# submodule.
+OLD_LAYOUT="$OBJ_DIR/old-layout"
+OLD_UNIX_DIR="$OLD_LAYOUT/research/dxmt/src/winemetal/unix"
+mkdir -p "$OLD_UNIX_DIR"
+ln -sfn "$REPO_ROOT/research/remote-metal" "$OLD_LAYOUT/research/remote-metal"
+ln -sfn "$REPO_ROOT/build" "$OLD_LAYOUT/build"
+INCLUDES="$INCLUDES -iquote $OLD_UNIX_DIR"
 INCLUDES_DIRECTX="-I$DXMT_ROOT/include/native/directx -I$DXMT_ROOT/include/native/windows"
 INCLUDES_SHADERS="-I$BUILD_DIR/shader-headers"
 LLVM_INCLUDES="-I$LLVM_BUILD/include -I$LLVM_SRC/include"
@@ -163,6 +175,29 @@ fi
 echo "=== winemetal unix (Objective-C) ==="
 compile_objc "$DXMT_SRC/winemetal/unix/winemetal_unix.c" winemetal_unix
 compile_objc "$DXMT_SRC/winemetal/unix/cache.c"          cache
+
+echo "=== airconv -- embedded shader headers ==="
+# airconv embeds three precompiled Metal shaders as C arrays. meson builds them
+# with metalir_generator + hexdump_generator (src/airconv/meson.build); same
+# chain here: metal (AIR, metal3.1, macOS 14 target) then xxd of the .air.
+mkdir -p "$BUILD_DIR/shader-headers"
+for shader in air_msad air_samplepos air_tessellation; do
+    src="$DXMT_SRC/airconv/shaders/$shader.metal"
+    hdr="$BUILD_DIR/shader-headers/$shader.h"
+    if [ ! -f "$hdr" ] || [ "$src" -nt "$hdr" ]; then
+        # Xcode 27's Metal compiler changed the private __metal_atomic_fetch_add_explicit
+        # builtin (air_tessellation.metal) to take five arguments; compile a copy that
+        # uses the public atomic_fetch_add_explicit, which has the same semantics.
+        sed -E 's/__metal_atomic_fetch_add_explicit\(([a-z_]+), ([^,]+), int\(memory_order_relaxed\), __METAL_MEMORY_SCOPE_THREADGROUP__\)/atomic_fetch_add_explicit((threadgroup atomic_int *)\1, \2, memory_order_relaxed)/' \
+            "$src" > "$BUILD_DIR/shader-headers/$shader.metal"
+        (cd "$BUILD_DIR/shader-headers" \
+         && xcrun -sdk macosx metal -o "$shader.air" -c "$shader.metal" -std=metal3.1 --target=air64-apple-macos14.0 \
+         && xxd -n "$shader" -i "$shader.air" "$shader.h")
+        echo "  $shader.h                                OK"
+    else
+        echo "  $shader.h                                CACHED"
+    fi
+done
 
 echo "=== airconv (C++ 20, needs LLVM headers) ==="
 for cpp in airconv_context.cpp air_type.cpp air_signature.cpp air_operations.cpp \
